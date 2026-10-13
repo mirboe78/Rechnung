@@ -11,6 +11,14 @@ const PDF = (() => {
   const senderLine = s => [s.practice || s.name, s.street, s.city].filter(Boolean).join(' – ');
   const footerText = s => [s.name, s.street, s.city, s.phone ? 'Mobil: ' + s.phone : '', s.mail].filter(Boolean).join(' - ');
 
+  /* Satz vor der Bankverbindung: mit Zahlungsfrist die Variante mit {frist}, sonst die ohne.
+   * Ältere Rechnungen ohne zweite Variante behalten die frühere Schreibweise. */
+  function payLine(texts, inv) {
+    if (!inv.dueDays) return texts.payText || '';
+    const d = fmtD(addDays(inv.issued, inv.dueDays));
+    if (texts.payTextDue) return texts.payTextDue.replace(/\{frist\}/g, d);
+    return (texts.payText || '') + ` Bitte bis zum ${d}.`;
+  }
   /* Leere Zeilen weglassen; Kontoinhaber fällt auf den Absendernamen zurück */
   const bankRows = s => [['Kontoinhaber:', s.bank.owner || s.sender.name], ['IBAN:', s.bank.iban], ['BIC:', s.bank.bic], ['Bank:', s.bank.bank]].filter(([, v]) => v && String(v).trim());
 
@@ -111,9 +119,7 @@ const PDF = (() => {
     y += LH;
 
     if (!storno) {
-      let pay = s.texts.payText;
-      if (inv.dueDays) pay += ` Bitte bis zum ${fmtD(addDays(inv.issued, inv.dueDays))}.`;
-      para(pay);
+      para(payLine(s.texts, inv));
       for (const [k, v] of bankRows(s)) {
         doc.text(k, L, y); doc.text(v, C2, y); y += LH;
       }
@@ -130,5 +136,5 @@ const PDF = (() => {
     return doc.output('arraybuffer');
   }
 
-  return { build, recipientLines, footerText, senderLine, bankRows };
+  return { build, recipientLines, footerText, senderLine, bankRows, payLine };
 })();

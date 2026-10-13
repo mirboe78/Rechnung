@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS = {
     greeting: 'Guten Tag,',
     intro: 'vielen Dank für Ihr Vertrauen. Für meine Leistung erlaube ich mir, Ihnen Folgendes in Rechnung zu stellen:',
     payText: 'Ich bitte Sie, den Gesamtbetrag auf folgende Bankverbindung zu überweisen:',
+    payTextDue: 'Ich bitte Sie, den Gesamtbetrag bis zum {frist} auf folgende Bankverbindung zu überweisen:',
     closing: 'Mit freundlichen Grüßen'
   }
 };
@@ -228,7 +229,7 @@ function paper(i, opts = {}) {
         <div class="p-grid p-tot"><span>${st ? 'Gutschrift' : 'Gesamt'}</span><span></span><span>${e(i.gross)}</span></div>
         ${i.taxMode === 'ku' ? '<p class="p-note">Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.</p>' : ''}
       </div>
-      ${st ? '' : `<p>${esc(s.texts.payText)}${i.dueDays ? ` Bitte bis zum ${fmtD(addDays(i.issued, i.dueDays))}.` : ''}</p>
+      ${st ? '' : `<p>${esc(PDF.payLine(s.texts, i))}</p>
       <div class="p-grid bank">${PDF.bankRows(s).map(([k, v]) => `<span>${k}</span><span>${esc(v)}</span>`).join('')}</div>`}
       <p>${esc(s.texts.closing)}</p>
     </div>
@@ -502,7 +503,9 @@ function textFields() {
   const t = A.settings.texts, f = (k, label, v) => `<label>${label}<input data-set="texts.${k}" value="${esc(v)}"></label>`;
   return `${f('greeting', 'Anrede', t.greeting)}
     <label>Einleitung<textarea data-set="texts.intro">${esc(t.intro)}</textarea></label>
-    <label>Satz vor der Bankverbindung<textarea data-set="texts.payText" style="min-height:80px">${esc(t.payText)}</textarea></label>
+    <label>Satz vor der Bankverbindung – ohne Zahlungsfrist${A.settings.dueDays ? '' : ' <span class="status-ok">(wird verwendet)</span>'}<textarea data-set="texts.payText" style="min-height:80px">${esc(t.payText)}</textarea></label>
+    <label>Satz vor der Bankverbindung – mit Zahlungsfrist${A.settings.dueDays ? ' <span class="status-ok">(wird verwendet)</span>' : ''}<textarea data-set="texts.payTextDue" style="min-height:80px">${esc(t.payTextDue)}</textarea></label>
+    <p class="fine"><b>{frist}</b> wird durch das Datum ersetzt, z. B. „${esc(PDF.payLine({ payText: '', payTextDue: '{frist}' }, { issued: today(), dueDays: A.settings.dueDays || 14 }))}“. Welche Variante gilt, richtet sich nach der Zahlungsfrist oben unter „Leistungen und Stundensätze“.</p>
     <label>Grußformel<textarea data-set="texts.closing" style="min-height:80px">${esc(t.closing)}</textarea></label>
     <p class="fine">Zeilenumbrüche und Leerzeilen erscheinen genau so auf der Rechnung.</p>`;
 }
@@ -866,7 +869,7 @@ document.addEventListener('input', e => {
     saveSettingsSoon();
   }
 });
-document.addEventListener('change', e => { if (e.target.tagName === 'SELECT' && e.target.dataset.set) saveSettingsNow(); });
+document.addEventListener('change', e => { if (e.target.tagName === 'SELECT' && e.target.dataset.set) { saveSettingsNow(); if (e.target.dataset.set === 'dueDays') render(false); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
 document.getElementById('logoInput').addEventListener('change', async e => {
