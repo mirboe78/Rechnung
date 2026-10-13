@@ -36,6 +36,11 @@ const DEFAULT_SETTINGS = {
   taxMode: 'ku',
   rates: [{ id: 'r1', name: 'Beratung', rate: 0 }],
   step: 15, dueDays: 0, resetYearly: true,
+  mail: {
+    greetingWord: 'Guten Tag',
+    subject: 'Rechnung {nummer}',
+    body: '{anrede}\n\nanbei erhalten Sie meine Rechnung {nummer} über {betrag}.\n\nMit freundlichen Grüßen\n{absender}'
+  },
   texts: {
     greeting: 'Guten Tag,',
     intro: 'vielen Dank für Ihr Vertrauen. Für meine Leistung erlaube ich mir, Ihnen Folgendes in Rechnung zu stellen:',
@@ -62,7 +67,7 @@ async function loadAll() {
   const [settings, counters, clients, invoices, dirty, lastBackup, setupDone, logo] = await Promise.all([
     DB.getMeta('settings'), DB.getMeta('counters'), DB.all('clients'), DB.all('invoices'), DB.getMeta('dirty'), DB.getMeta('lastBackup'), DB.getMeta('setupDone'), DB.getMeta('logo')]);
   A.logo = logo || null;
-  A.settings = settings ? Object.assign(clone(DEFAULT_SETTINGS), settings, { texts: Object.assign(clone(DEFAULT_SETTINGS.texts), settings.texts || {}) }) : clone(DEFAULT_SETTINGS);
+  A.settings = settings ? Object.assign(clone(DEFAULT_SETTINGS), settings, { texts: Object.assign(clone(DEFAULT_SETTINGS.texts), settings.texts || {}), mail: Object.assign(clone(DEFAULT_SETTINGS.mail), settings.mail || {}) }) : clone(DEFAULT_SETTINGS);
   A.counters = counters || {};
   A.clients = clients;
   A.invoices = invoices;
@@ -270,6 +275,7 @@ V.setup = () => {
   <section class="card"><h2>Bankverbindung</h2><div class="g2">${f('bank.owner', 'Kontoinhaberin', s.bank.owner)}${f('bank.bank', 'Bank', s.bank.bank)}${f('bank.iban', 'IBAN', s.bank.iban)}${f('bank.bic', 'BIC', s.bank.bic)}</div></section>
   ${logoSection()}
   <section class="card"><h2>Texte auf der Rechnung</h2>${textFields()}</section>
+  ${mailSection()}
   <button class="btn primary big" data-act="finishSetup">Einrichtung abschließen</button>
   <section class="card"><h2>Neues iPad oder App neu installiert?</h2><p class="fine">Dann statt der Einrichtung die letzte Datensicherung laden. Alle Rechnungen, Klient:innen und Nummern sind danach wieder da.</p>
     <button class="btn" data-act="pickRestore">Datensicherung wiederherstellen</button></section>`;
@@ -381,7 +387,7 @@ V.done = () => {
   <div class="split">
     <div class="stack">
       <button class="btn primary big" data-act="sharePdf" data-id="${i.id}">${i.savedAt ? 'Nochmal in Dateien sichern' : 'In Dateien sichern'}</button>
-      <button class="btn big" data-act="sharePdf" data-id="${i.id}">Per E-Mail oder Nachricht senden</button>
+      <button class="btn big" data-act="mailPdf" data-id="${i.id}">Per E-Mail senden</button>
       ${i.savedAt ? '<p class="status-ok" style="margin:0">✓ PDF wurde gesichert</p>' : ''}
       <button class="btn big" data-act="new">Nächste Rechnung</button>
       <button class="link" data-act="go" data-v="start">Zur Startseite</button>
@@ -457,6 +463,40 @@ V.backup = () => {
     <li>Bei einem neuen iPad: App einrichten, dann hier die letzte Sicherung laden.</li></ul></section>`;
 };
 
+/* ---------- E-Mail ---------- */
+function greetingFor(c) {
+  const w = (A.settings.mail.greetingWord || 'Guten Tag').trim(), last = (c.name || '').trim().split(/\s+/).pop();
+  if (c.anrede === 'Frau' || c.anrede === 'Herr') return `${w} ${c.anrede} ${last},`;
+  if (c.anrede === 'Familie') return `${w} Familie ${c.name},`;
+  return c.name ? `${w} ${c.name},` : `${w},`;
+}
+function fillTpl(tpl, inv) {
+  const v = { anrede: greetingFor(inv.client), name: fullName(inv.client), nummer: inv.no, betrag: eur(signed(inv)),
+    datum: fmtD(inv.items[0].date), rechnungsdatum: fmtD(inv.issued), absender: A.settings.sender.name };
+  return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m));
+}
+function mailSection() {
+  const m = A.settings.mail;
+  return `<section class="card"><h2>E-Mail-Vorlage</h2>
+    <div class="g2"><label>Begrüßungswort<input data-set="mail.greetingWord" value="${esc(m.greetingWord)}"></label><label>Betreff<input data-set="mail.subject" value="${esc(m.subject)}"></label></div>
+    <label>Text der E-Mail<textarea data-set="mail.body" style="min-height:260px">${esc(m.body)}</textarea></label>
+    <p class="fine">Platzhalter: <b>{anrede}</b> wird zu „${esc(greetingFor({ anrede: 'Frau', name: 'Anna Muster' }))}“ bzw. „${esc(greetingFor({ anrede: 'Familie', name: 'Weber' }))}“, außerdem <b>{nummer}</b>, <b>{betrag}</b>, <b>{datum}</b> (Termin), <b>{name}</b> und <b>{absender}</b>. Links und Telefonnummern einfach als Text hineinschreiben.</p></section>`;
+}
+async function mailSheet(id) {
+  const inv = A.invoices.find(x => x.id === id); if (!inv) return;
+  if (!A.pdfCache.has(id)) { let b = await DB.getPdf(id); if (!b) { b = PDF.build(inv, A.logo); await DB.putPdfIfMissing(id, b); } A.pdfCache.set(id, b); }
+  const c = clientById(inv.client.id) || {}, m = A.settings.mail, to = c.mail || '';
+  sheet(`<div class="sheet-head"><h1>E-Mail an ${esc(fullName(inv.client))}</h1><button class="btn small" data-act="close">Schließen</button></div>
+    <div class="card">
+      <label>An${to ? '' : ' (noch keine Adresse gespeichert – hier eintragen, wird bei der Person gespeichert)'}<input id="m-to" type="email" value="${esc(to)}" autocomplete="off"></label>
+      <label>Betreff<input id="m-subj" value="${esc(fillTpl(m.subject, inv))}"></label>
+      <label>Text<textarea id="m-body" style="min-height:240px">${esc(fillTpl(m.body, inv))}</textarea></label>
+      <div class="path">📎 ${esc(pdfName(inv))}</div>
+      <div class="g2"><button class="btn big" data-act="copyMail">1. Adresse kopieren</button><button class="btn primary big" data-act="mailOpen" data-id="${id}">2. Mail mit Rechnung öffnen</button></div>
+      <p class="fine">In Mail auf das Feld „An:“ tippen und „Einfügen“ wählen. Die Rechnung hängt schon an, der Text steht drin. Falls der Betreff leer ist, oben kopieren oder kurz eintippen.</p>
+    </div>`);
+  A.mailCtx = { id, clientId: inv.client.id, original: to };
+}
 function textFields() {
   const t = A.settings.texts, f = (k, label, v) => `<label>${label}<input data-set="texts.${k}" value="${esc(v)}"></label>`;
   return `${f('greeting', 'Anrede', t.greeting)}
@@ -517,6 +557,7 @@ V.settings = () => {
     <p class="fine">Bitte mit dem Steuerberater abstimmen. Bereits erstellte Rechnungen ändern sich dadurch nicht.</p></section>
   ${logoSection()}
   <section class="card"><h2>Texte auf der Rechnung</h2>${textFields()}</section>
+  ${mailSection()}
   <section class="card"><h2>Praxis und Absender</h2>
     <div class="g2">${f('sender.name', 'Name', s.sender.name)}${f('sender.practice', 'Absenderzeile', s.sender.practice)}${f('sender.street', 'Straße und Nr.', s.sender.street)}${f('sender.city', 'PLZ und Ort', s.sender.city)}${f('sender.phone', 'Mobil', s.sender.phone)}${f('sender.mail', 'E-Mail', s.sender.mail)}${f('sender.taxno', 'Steuernummer (optional, ab 250 € Pflicht)', s.sender.taxno)}</div></section>
   <section class="card"><h2>Bankverbindung</h2>
@@ -526,7 +567,7 @@ V.settings = () => {
 
 /* ---------- Overlays ---------- */
 function sheet(html) { A.sheetInvId = null; document.getElementById('sheetRoot').innerHTML = `<div class="sheet-bg" data-act="closeBg"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`; }
-function closeSheet() { document.getElementById('sheetRoot').innerHTML = ''; A.clientEdit = null; A.sheetInvId = null; }
+function closeSheet() { document.getElementById('sheetRoot').innerHTML = ''; A.clientEdit = null; A.sheetInvId = null; A.mailCtx = null; }
 async function invSheet(id, confirm) {
   const i = A.invoices.find(x => x.id === id); if (!i) return;
   const storno = i.stornoId ? A.invoices.find(x => x.id === i.stornoId) : null;
@@ -538,7 +579,7 @@ async function invSheet(id, confirm) {
         ${i.paidAt ? `<dt>Bezahlt</dt><dd>${fmtD(i.paidAt)}</dd>` : ''}
         ${i.ref ? `<dt>Storniert</dt><dd>Rechnung ${esc(i.ref)}</dd>` : ''}${storno ? `<dt>Storno</dt><dd>${esc(storno.no)}</dd>` : ''}</dl>
       ${i.kind === 'rechnung' && i.status === 'ok' ? `<button class="btn big ${i.paidAt ? '' : 'primary'}" data-act="paid" data-id="${i.id}">${i.paidAt ? 'Doch noch offen' : 'Als bezahlt markieren'}</button>` : ''}
-      <button class="btn big" data-act="sharePdf" data-id="${i.id}">PDF in Dateien sichern oder senden</button>
+      <div class="g2"><button class="btn big" data-act="sharePdf" data-id="${i.id}">In Dateien sichern</button><button class="btn big" data-act="mailPdf" data-id="${i.id}">Per E-Mail senden</button></div>
       ${i.kind === 'rechnung' && i.status === 'ok' ? (confirm ? `<div class="confirm"><b>Rechnung ${esc(i.no)} wirklich stornieren?</b><span>Es entsteht eine Stornorechnung mit neuer Nummer. Die alte Rechnung bleibt erhalten und wird als storniert markiert.</span><div class="row"><button class="btn danger" data-act="doStorno" data-id="${i.id}">Ja, stornieren</button><button class="btn" data-act="open" data-id="${i.id}">Abbrechen</button></div></div>` : `<button class="btn danger" data-act="storno" data-id="${i.id}">Stornieren</button>`) : ''}
     </div><div class="paper-wrap">${paper(i)}</div></div>`);
   A.sheetInvId = id;
@@ -597,6 +638,12 @@ async function saveSettingsNow() {
 addEventListener('pagehide', () => { if (settingsTimer) saveSettingsNow(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && settingsTimer) saveSettingsNow(); });
 
+async function saveMailToClient(v) {
+  const ctx = A.mailCtx; if (!ctx || !v || v === ctx.original || !ctx.clientId) return;
+  const c = clientById(ctx.clientId); if (!c || c.mail === v) return;
+  const upd = Object.assign(clone(c), { mail: v, updatedAt: new Date().toISOString() });
+  try { await DB.putClient(upd); Object.assign(c, upd); ctx.original = v; A.dirty++; } catch (e) { toast('Adresse nicht gespeichert: ' + e.message, true); }
+}
 function readClientForm(pfx, anrede) {
   const v = k => (document.getElementById(`${pfx}-${k}`)?.value || '').trim();
   return { anrede, name: v('name'), street: v('street'), city: v('city'), phone: v('phone'), mail: v('mail') };
@@ -741,6 +788,32 @@ const actions = {
   pickLogo: () => { const i = document.getElementById('logoInput'); i.value = ''; i.click(); },
   logoShadow: async () => { await setLogo(Object.assign({}, A.logo, { shadow: !A.logo.shadow })); render(false); },
   removeLogo: async () => { await setLogo(null); render(false); toast('Logo entfernt.'); },
+  mailPdf: el => mailSheet(el.dataset.id),
+  copyMail: el => {
+    const inp = document.getElementById('m-to'), v = (inp?.value || '').trim();
+    if (!v) { toast('Bitte zuerst eine E-Mail-Adresse eintragen.', true); inp?.focus(); return; }
+    const ok = () => { el.textContent = '✓ Adresse kopiert'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(ok, () => { inp.select(); toast('Bitte die Adresse markieren und kopieren.', true); });
+    else { inp.select(); document.execCommand && document.execCommand('copy'); ok(); }
+    saveMailToClient(v);
+  },
+  mailOpen: el => {
+    const inv = A.invoices.find(x => x.id === el.dataset.id), bytes = A.pdfCache.get(el.dataset.id);
+    if (!inv || !bytes) return toast('Die Rechnung ist noch nicht bereit. Bitte noch einmal tippen.', true);
+    const to = document.getElementById('m-to').value.trim(), subj = document.getElementById('m-subj').value, body = document.getElementById('m-body').value;
+    const file = pdfFile(inv, bytes);
+    saveMailToClient(to);
+    if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+      // Muss sofort im Tipp passieren (Apple-Vorgabe) – darum kein await davor.
+      navigator.share({ files: [file], title: subj, text: body }).then(() => toast('Mail vorbereitet.'))
+        .catch(e => { if (e.name !== 'AbortError') toast('Mail konnte nicht geöffnet werden: ' + e.message, true); });
+    } else {
+      // Laptop/Browser ohne Teilen: PDF herunterladen und Mailprogramm mit Adresse, Betreff und Text öffnen
+      download(file);
+      setTimeout(() => { location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`; }, 500);
+      toast('PDF heruntergeladen – bitte in der Mail anhängen.');
+    }
+  },
   close: () => closeSheet(),
   closeBg: () => closeSheet()
 };
