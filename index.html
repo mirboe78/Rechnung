@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Datenschutz: Die App darf nur Dateien von ihrer eigenen Adresse laden und keinerlei Daten irgendwohin senden. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'self'; manifest-src 'self'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Rechnungserstellung</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rechnungen">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#EDF4F3">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap" id="main"><p class="muted">Rechnungserstellung wird geladen …</p></div>
+<nav class="tabs" id="tabs" aria-label="Bereiche" hidden><div class="tabs-in">
+  <button class="tab" data-act="go" data-v="start" data-tab="start"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Neue Rechnung</button>
+  <button class="tab" data-act="go" data-v="list" data-tab="list"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/></svg>Rechnungen</button>
+  <button class="tab" data-act="go" data-v="clients" data-tab="clients"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.3 0 4 1.6 4.5 4.3"/></svg>Klient:innen</button>
+  <button class="tab" data-act="go" data-v="backup" data-tab="backup"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span>Sicherung<i class="dot" id="backupDot" hidden></i></span></button>
+  <button class="tab" data-act="go" data-v="settings" data-tab="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg>Einstellungen</button>
+</div></nav>
+<div id="sheetRoot"></div>
+<div id="toastRoot"></div>
+<input type="file" id="restoreInput" accept=".json,application/json" hidden>
+<input type="file" id="logoInput" accept="image/*" hidden>
+<script src="version.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="db.js"></script>
+<script src="pdf.js"></script>
+<script src="export.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
