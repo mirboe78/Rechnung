@@ -4,8 +4,8 @@
 importScripts('version.js');
 const CACHE = 'rechnung-app-' + self.APP_VERSION;
 const ASSETS = ['./', 'index.html', 'styles.css', 'version.js', 'db.js', 'pdf.js', 'export.js', 'app.js',
-  'manifest.webmanifest', 'vendor/jspdf.umd.min.js', 'vendor/xlsx.full.min.js',
-  'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
+  'manifest.webmanifest', 'jspdf.umd.min.js', 'xlsx.full.min.js',
+  'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   // Neue Version vollständig laden, bevor sie aktiv werden darf. Fehlt eine Datei, bleibt die alte Version aktiv.
