@@ -33,6 +33,7 @@ const PDF = (() => {
     doc.setProperties({ title: `${storno ? 'Stornorechnung' : 'Rechnung'} ${inv.no}`, author: s.sender.name, creator: 'Rechnungserstellung ' + (inv.appVersion || '') });
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(26, 26, 26);
+    doc.setLineHeightFactor(LH / (11 * 0.3528));   // Zeilenabstand mehrzeiliger Texte = Abstand der Einzelzeilen
 
     // Logo oben rechts, eingepasst in 76 x 31 mm (optional mit weichem Schatten)
     if (logo && logo.dataUrl) {
@@ -74,7 +75,9 @@ const PDF = (() => {
     doc.setFont('helvetica', 'normal');
     y += 15;
 
-    const para = (txt, gap = LH * 2) => { const lines = doc.splitTextToSize(txt, W); doc.text(lines, L, y); y += lines.length * LH + (gap - LH); };
+    /* Absätze aus den Einstellungen übernehmen: jede Zeile einzeln umbrechen, Leerzeilen bleiben erhalten */
+    const wrap = txt => String(txt || '').replace(/\r\n?/g, '\n').split('\n').flatMap(l => (l.trim() ? doc.splitTextToSize(l, W) : ['']));
+    const para = (txt, gap = LH * 2) => { const lines = wrap(txt); doc.text(lines, L, y); y += lines.length * LH + (gap - LH); };
     if (storno) {
       para(s.texts.greeting);
       para(`hiermit storniere ich die Rechnung Nr. ${inv.ref} vom ${fmtD(inv.refIssued)}. Der unten stehende Betrag wird Ihnen gutgeschrieben.`);
@@ -116,7 +119,7 @@ const PDF = (() => {
       }
       y += LH;
     }
-    doc.text(s.texts.closing, L + 0.8, y);
+    doc.text(wrap(s.texts.closing), L + 0.8, y);
 
     // Fußzeile
     doc.setFontSize(8);

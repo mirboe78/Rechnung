@@ -121,7 +121,7 @@ input:disabled{opacity:.6}
 .paper .p-rcpt{min-height:9cqi}
 .paper .p-date{align-self:flex-end;margin-top:1cqi;margin-right:2.4cqi}
 .paper .p-no{font-weight:700;margin-top:6cqi}
-.paper p{margin:0}
+.paper p{margin:0;white-space:pre-line}
 .paper .p-body{display:flex;flex-direction:column;gap:2.6cqi;margin-top:4cqi}
 .paper .p-grid{display:grid;grid-template-columns:26.6cqi 13.3cqi 1fr}
 .paper .p-grid.bank{grid-template-columns:26.6cqi 1fr}

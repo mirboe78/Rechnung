@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS = {
   bank: { owner: '', iban: '', bic: '', bank: '' },
   taxMode: 'ku',
   rates: [{ id: 'r1', name: 'Beratung', rate: 0 }],
-  step: 15, dueDays: 0, resetYearly: true,
+  step: 15, dueDays: 0, resetYearly: true, prefix: '',
   mail: {
     greetingWord: 'Guten Tag',
     subject: 'Rechnung {nummer}',
@@ -57,7 +57,8 @@ const A = {
 };
 const counterKey = year => (A.settings.resetYearly ? String(year) : 'all');
 const nextSeq = year => (A.counters[counterKey(year)] || 0) + 1;
-const fmtNo = (seq, year) => `${seq}-${year}`;
+const cleanPrefix = v => String(v || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ_-]/g, '').slice(0, 6);
+const fmtNo = (seq, year) => `${cleanPrefix(A.settings && A.settings.prefix)}${seq}-${year}`;
 const peekNo = year => fmtNo(nextSeq(year), year);
 const signed = i => (i.kind === 'storno' ? -i.gross : i.gross);
 const pdfName = i => `${i.kind === 'storno' ? 'Stornorechnung' : 'Rechnung'}_${i.no}_${lastName(i.client)}.pdf`;
@@ -265,8 +266,8 @@ V.setup = () => {
   <h1>Einrichtung</h1>
   <p class="muted" style="margin:0">Einmal ausfüllen. Alle Angaben werden nur auf diesem Gerät gespeichert und lassen sich später unter Einstellungen ändern.</p>
   <section class="card"><h2>Rechnungsnummer</h2>
-    <div class="g2"><label>Letzte bisher vergebene Rechnungsnummer ${y}<input id="setup-counter" inputmode="numeric" placeholder="z. B. 128" value="${esc(A.setupCounter)}"></label>
-    <label>Erste Rechnung in der App bekommt<input id="setup-next" value="${fmtNo((parseInt(A.setupCounter, 10) || 0) + 1, y)}" disabled></label></div>
+    <div class="g3"><label>Kürzel davor (optional)<input id="setup-prefix" value="${esc(s.prefix)}" placeholder="z. B. P" autocapitalize="characters" maxlength="6"></label><label>Letzte vergebene Nummer ${y} (nur die Zahl)<input id="setup-counter" inputmode="numeric" placeholder="z. B. 128" value="${esc(A.setupCounter)}"></label>
+    <label>Erste Rechnung in der App<input id="setup-next" value="${fmtNo((parseInt(A.setupCounter, 10) || 0) + 1, y)}" disabled></label></div>
     <p class="fine">Bitte die zuletzt vergebene Nummer eintragen. Die App zählt lückenlos weiter.</p></section>
   <section class="card"><h2>Stundensatz</h2>
     <div class="g2"><label>Leistung<input data-rate="0" data-k="name" value="${esc(s.rates[0].name)}"></label><label>€ pro Stunde<input data-rate="0" data-k="rate" inputmode="decimal" placeholder="z. B. 85" value="${s.rates[0].rate ? dec(s.rates[0].rate) : ''}"></label></div></section>
@@ -501,7 +502,9 @@ function textFields() {
   const t = A.settings.texts, f = (k, label, v) => `<label>${label}<input data-set="texts.${k}" value="${esc(v)}"></label>`;
   return `${f('greeting', 'Anrede', t.greeting)}
     <label>Einleitung<textarea data-set="texts.intro">${esc(t.intro)}</textarea></label>
-    ${f('payText', 'Satz vor der Bankverbindung', t.payText)}${f('closing', 'Grußformel', t.closing)}`;
+    <label>Satz vor der Bankverbindung<textarea data-set="texts.payText" style="min-height:80px">${esc(t.payText)}</textarea></label>
+    <label>Grußformel<textarea data-set="texts.closing" style="min-height:80px">${esc(t.closing)}</textarea></label>
+    <p class="fine">Zeilenumbrüche und Leerzeilen erscheinen genau so auf der Rechnung.</p>`;
 }
 function logoSection() {
   const l = A.logo;
@@ -550,6 +553,7 @@ V.settings = () => {
       <label>Zahlungsfrist auf der Rechnung<select data-set="dueDays">${[0, 7, 14, 30].map(n => `<option value="${n}" ${s.dueDays == n ? 'selected' : ''}>${n ? n + ' Tage' : 'keine (wie bisher)'}</option>`).join('')}</select></label></div>
   </section>
   <section class="card"><h2>Rechnungsnummern</h2>
+    <label>Kürzel vor der Nummer (optional, z. B. P → P115-${y})<input id="set-prefix" value="${esc(s.prefix || '')}" placeholder="kein Kürzel" autocapitalize="characters" maxlength="6"></label>
     <div class="g2"><label>Zuletzt vergebene Nummer${s.resetYearly ? ' ' + y : ''}<input id="set-counter" inputmode="numeric" value="${A.counters[key] || 0}" ${counterLocked ? 'disabled' : ''}></label><label>Nächste Rechnung bekommt<input id="set-next" value="${peekNo(y)}" disabled></label></div>
     <div class="seg"><button data-act="resetYearly" data-v="1" aria-pressed="${s.resetYearly}" ${A.invoices.length ? 'disabled' : ''}><b>Jedes Jahr neu ab 1</b><small>1-2027, 2-2027 …</small></button><button data-act="resetYearly" data-v="0" aria-pressed="${!s.resetYearly}" ${A.invoices.length ? 'disabled' : ''}><b>Durchlaufend</b><small>Nummer zählt über Jahre weiter</small></button></div>
     <p class="fine">${counterLocked ? 'Die Nummer ist gesperrt, weil schon Rechnungen damit erstellt wurden. So kann keine Nummer doppelt oder mit Lücke vergeben werden.' : 'Nur beim Einrichten ändern: die letzte Nummer aus der alten Vorlage eintragen.'}</p></section>
@@ -835,6 +839,12 @@ document.addEventListener('input', e => {
     if (t.id && t.id.startsWith('nc-') && A.D.newClient) { A.D.newClient[t.id.slice(3)] = t.value; return; }
   }
   if (t.id === 'c-q') { A.clientQ = t.value; document.getElementById('clist').innerHTML = clistHTML(recentClients().filter(c => matches(c, A.clientQ))); return; }
+  if (t.id === 'setup-prefix' || t.id === 'set-prefix') {
+    A.settings.prefix = cleanPrefix(t.value);
+    const nx = document.getElementById(t.id === 'setup-prefix' ? 'setup-next' : 'set-next');
+    if (nx) nx.value = t.id === 'setup-prefix' ? fmtNo((parseInt(A.setupCounter, 10) || 0) + 1, new Date().getFullYear()) : peekNo(new Date().getFullYear());
+    saveSettingsSoon(); return;
+  }
   if (t.id === 'setup-counter') { A.setupCounter = t.value.trim(); document.getElementById('setup-next').value = fmtNo((parseInt(A.setupCounter, 10) || 0) + 1, new Date().getFullYear()); return; }
   if (t.id === 'set-counter') {
     const n = parseInt(t.value, 10), y = new Date().getFullYear(), key = counterKey(y);
